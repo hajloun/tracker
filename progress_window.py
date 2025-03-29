@@ -1,9 +1,11 @@
 import dearpygui.dearpygui as dpg
-from database import ProgressTracker
+from datetime import datetime
+from database import ProgressTracker, HabitTracker
 
 def save_progress_callback(sender, app_data, user_data):
-    # Rozbalíme progress_tracker a seznam input fieldů
-    progress_tracker, input_fields, progress_group = user_data
+    # Rozbalíme progress_tracker, habit_tracker a seznam input fieldů
+    progress_tracker, habit_tracker, input_fields, progress_group, streak_text = user_data
+    saved_any = False
     
     # Procházíme všechny input fieldy a ukládáme jejich obsah
     for tag, checkbox_tag in input_fields:
@@ -13,14 +15,51 @@ def save_progress_callback(sender, app_data, user_data):
             if text:  # Pokud pole není prázdné
                 # Uložíme text s identifikací checkboxu
                 checkbox_label = dpg.get_item_label(checkbox_tag)
-                if progress_tracker.save_progress(f"{checkbox_label}: {text}"):
-                    # Vyčistíme input field
-                    dpg.set_value(tag, "")
+                
+                # Uložíme do progress trackeru
+                progress_tracker.save_progress(f"{checkbox_label}: {text}")
+                
+                # Označíme, že bylo něco uloženo
+                saved_any = True
+                
+                # Vyčistíme input field
+                dpg.set_value(tag, "")
+                
     
-    # Obnovíme progress group
-    dpg.delete_item(progress_group, children_only=True)
-    for line in progress_tracker.load_progress():
-        dpg.add_text(line, parent=progress_group)
+    # Pokud bylo něco uloženo, aktualizujeme streak
+    if saved_any:
+        # Uložíme záznam o dnešní aktivitě
+        habit_tracker.save_habit(f"Daily progress on {datetime.now().strftime('%Y-%m-%d')}")
+        # Obnovíme progress group
+        dpg.delete_item(progress_group, children_only=True)
+        
+        # Načteme a zobrazíme poslední záznamy každého typu
+        category_records = {}
+        for text, created_at in progress_tracker.load_progress():
+            if ":" in text:
+                category, content = text.split(":", 1)
+                formatted_date = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.")
+
+                if category not in category_records:
+                    category_records[category] = []
+                if len(category_records[category]) < 5:
+                    category_records[category].append(f"{formatted_date} - {content}")
+
+        # Zobrazíme záznamy podle kategorií
+        for category, records in category_records.items():
+            if category == "Codewars":
+                dpg.add_text(f"Last Kata completed:", parent=progress_group)
+            else:
+                dpg.add_text(f"Last {category} entries:", parent=progress_group)
+            for record in records:
+                if category == "Codewars":
+                    dpg.add_text(f"  {record} kata", parent=progress_group)
+                else:
+                    dpg.add_text(f"  {record}", parent=progress_group)
+            dpg.add_spacer(height=5, parent=progress_group)
+        # Aktualizujeme streak
+        streak_count = habit_tracker.get_streak_count()
+        dpg.configure_item(streak_text, default_value=f"Current Streak: {streak_count} days")
 
 def checkbox_callback(sender, app_data, user_data):
     input_field_id = user_data
@@ -33,6 +72,7 @@ def checkbox_callback(sender, app_data, user_data):
 def create_progress_window(width, height, pos, theme=None, font=None):
     # Create progress tracker
     progress_tracker = ProgressTracker()
+    habit_tracker = HabitTracker()
     
     # Seznam input fieldů a jejich příslušných checkboxů pro pozdější použití v save_progress_callback
     input_fields = []
@@ -87,7 +127,7 @@ def create_progress_window(width, height, pos, theme=None, font=None):
             codewars_input = dpg.add_input_text(
                 tag="codewars_input",
                 width=300,
-                hint="Write your Codewars progress here...",
+                hint="Write number of finished kata here...",
                 show=False
             )
             input_fields.append(("codewars_input", "R2"))
@@ -110,16 +150,45 @@ def create_progress_window(width, height, pos, theme=None, font=None):
             )
             input_fields.append(("course_input", "R3"))
         
-        # Progress group pod všemi checkboxy
-        progress_group = dpg.add_group(tag="progress_group")
-        # Initially load existing progress
-        for line in progress_tracker.load_progress():
-            dpg.add_text(line, parent=progress_group)
-        
         # Společné Save tlačítko pod všemi checkboxy
         dpg.add_button(
             label="Save All Progress",
             callback=save_progress_callback,
-            user_data=(progress_tracker, input_fields, progress_group),
+            user_data=(progress_tracker, habit_tracker, input_fields, "progress_group", "streak_text"),
             width=150
         )
+        
+        # Text pro zobrazení aktuálního streaku
+        streak_text = dpg.add_text(
+            f"Current Streak: {habit_tracker.get_streak_count()} days",
+            tag="streak_text"
+        )
+        
+        # Progress group pod všemi checkboxy a streakem
+        progress_group = dpg.add_group(tag="progress_group")
+        
+        # Načteme a zobrazíme poslední záznamy každého typu
+        category_records = {}
+        for text, created_at in progress_tracker.load_progress():
+            if ":" in text:
+                category, content = text.split(":", 1)
+                formatted_date = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.")
+
+                if category not in category_records:
+                    category_records[category] = []
+                if len(category_records[category]) < 5:
+                    category_records[category].append(f"{formatted_date} - {content}")
+
+        # Zobrazíme záznamy podle kategorií
+        for category, records in category_records.items():
+            if category == "Codewars":
+                dpg.add_text(f"Last Kata completed:", parent=progress_group)
+            else:
+                dpg.add_text(f"Last {category} entries:", parent=progress_group)
+            for record in records:
+                if category == "Codewars":
+                    dpg.add_text(f"  {record} kata", parent=progress_group)
+                else:
+                    dpg.add_text(f"  {record}", parent=progress_group)
+            dpg.add_spacer(height=5, parent=progress_group)
+        
