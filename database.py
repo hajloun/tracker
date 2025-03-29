@@ -63,7 +63,6 @@ class ProgressTracker:
         
 class HabitTracker:
     def __init__(self, db_name="progress.db"):
-        # Initialize database connection
         self.db_name = db_name
         self.lock = threading.Lock()
         self.create_table()
@@ -73,20 +72,26 @@ class HabitTracker:
         return sqlite3.connect(self.db_name)
 
     def create_table(self):
-        """Create habits table if it doesn't exist"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
+                # Table for individual habits
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS habits (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        text TEXT NOT NULL,
-                        date DATE NOT NULL,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        habit_name TEXT NOT NULL,
+                        streak_count INTEGER DEFAULT 0,
+                        last_updated DATE
                     )
-                """
-                )
+                """)
+                # Table for progress streak
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS progress_streak (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        streak_count INTEGER DEFAULT 0,
+                        last_updated DATE
+                    )
+                """)
                 conn.commit()
         except sqlite3.Error as e:
             print(f"Database creation error: {e}")
@@ -137,38 +142,66 @@ class HabitTracker:
             print(f"Error loading habits: {e}")
             return []
             
-    def get_streak_count(self):
-        """Calculate the current streak based on consecutive days"""
+    def get_streak_count(self, habit_name=None):
         try:
             with self.lock:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT date FROM habits ORDER BY date DESC")
-                    dates = [datetime.date.fromisoformat(row[0]) for row in cursor.fetchall()]
+                    if habit_name:
+                        cursor.execute("SELECT streak_count FROM habits WHERE habit_name = ?", (habit_name,))
+                    else:
+                        cursor.execute("SELECT streak_count FROM progress_streak LIMIT 1")
                     
-                    if not dates:
-                        return 0
-                    
-                    today = datetime.date.today()
-                    yesterday = today - datetime.timedelta(days=1)
-                    
-                    # Pokud nejnovější záznam není z dneška ani ze včerejška, streak začíná od nejnovějšího data
-                    if dates[0] < yesterday:
-                        return 1
-                    
-                    # Počítáme streak
-                    streak = 1
-                    current_date = dates[0]
-                    
-                    for i in range(1, len(dates)):
-                        expected_date = current_date - datetime.timedelta(days=1)
-                        if dates[i] == expected_date:
-                            streak += 1
-                            current_date = dates[i]
-                        else:
-                            break
-                    
-                    return streak
+                    result = cursor.fetchone()
+                    return result[0] if result else 0
         except sqlite3.Error as e:
-            print(f"Error calculating streak: {e}")
+            print(f"Error getting streak count: {e}")
             return 0
+
+    def increment_streak(self, habit_name=None):
+        try:
+            with self.lock:
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                    today = datetime.date.today().isoformat()
+                    
+                    if habit_name:
+                        # Check if habit exists
+                        cursor.execute("SELECT streak_count, last_updated FROM habits WHERE habit_name = ?", (habit_name,))
+                        result = cursor.fetchone()
+                        
+                        if result:
+                            streak_count, last_updated = result
+                            if last_updated != today:
+                                streak_count += 1
+                                cursor.execute(
+                                    "UPDATE habits SET streak_count = ?, last_updated = ? WHERE habit_name = ?",
+                                    (streak_count, today, habit_name)
+                                )
+                        else:
+                            # Create new habit record
+                            cursor.execute(
+                                "INSERT INTO habits (habit_name, streak_count, last_updated) VALUES (?, ?, ?)",
+                                (habit_name, 1, today)
+                            )
+                    else:
+                        # Handle progress streak
+                        cursor.execute("SELECT streak_count, last_updated FROM progress_streak LIMIT 1")
+                        result = cursor.fetchone()
+                        
+                        if result:
+                            streak_count, last_updated = result
+                            if last_updated != today:
+                                streak_count += 1
+                                cursor.execute(
+                                    "UPDATE progress_streak SET streak_count = ?, last_updated = ?",
+                                    (streak_count, today)
+                                )
+                        else:
+                            cursor.execute(
+                                "INSERT INTO progress_streak (streak_count, last_updated) VALUES (?, ?)",
+                                (1, today)
+                            )
+                    conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error incrementing streak: {e}")
