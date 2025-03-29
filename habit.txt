@@ -1,0 +1,61 @@
+import dearpygui.dearpygui as dpg
+from datetime import datetime
+from database import ProgressTracker, HabitTracker
+
+def save_habit_callback(sender, app_data, user_data):
+    # Unpack the tuple passed as user_data
+    input_field, habit_tracker, habit_group = user_data
+    
+    # Get text from input field
+    text = dpg.get_value(input_field)
+
+    # Save to database
+    if habit_tracker.save_habit(text):
+        # Clear input field
+        dpg.set_value(input_field, "")
+
+        # Reload habit group
+        dpg.delete_item(habit_group, children_only=True)
+        for line in habit_tracker.load_habits():
+            dpg.add_text(line, parent=habit_group)
+
+def create_habit_window(width, height, pos, theme=None, font=None):
+    # Create habit tracker
+    habit_tracker = HabitTracker()
+
+    # Create the habit tracking window
+    with dpg.window(
+        tag="Habit Window", 
+        label="Habit Tracker", 
+        width=width, 
+        height=height,
+        pos=pos,
+        no_close=True,
+        no_resize=True
+    ):
+        # Apply global theme if provided
+        if theme:
+            dpg.bind_theme(theme)
+
+        # Apply font if loaded
+        if font:
+            dpg.bind_font(font)
+
+        dpg.add_text("Enter your habits:")
+
+        # Input field for habits
+        input_field = dpg.add_input_text(width=-1, hint="Write your habit here...")
+
+        # Habit group
+        habit_group = dpg.add_group(tag="habit_group")
+
+        # Initially load existing habits
+        for line in habit_tracker.load_habits():
+            dpg.add_text(line, parent=habit_group)
+
+        # Save habit button
+        dpg.add_button(
+            label="Save Habit",
+            callback=save_habit_callback,
+            user_data=(input_field, habit_tracker, habit_group),
+        )
