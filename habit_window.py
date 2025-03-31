@@ -52,11 +52,9 @@ def create_habit_window(width, height, pos, theme=None, font=None):
         
         habits = ["Meditation", "Reading", "No Social Media", "No Porn"]
         
-        # Create checkboxes and streak displays for each habit
+        # Create checkboxes for each habit (without streak display)
         for habit in habits:
-            with dpg.group(horizontal=True):
-                habit_checkboxes[habit] = dpg.add_checkbox(label=habit)
-                habit_labels[habit] = dpg.add_text(f"{habit} Streak: {habit_tracker.get_streak_count(habit)} days")
+            habit_checkboxes[habit] = dpg.add_checkbox(label=habit)
 
         def save_habits_callback():
             for habit in habits:
@@ -69,6 +67,12 @@ def create_habit_window(width, height, pos, theme=None, font=None):
                     dpg.set_value(habit_checkboxes[habit], False)
 
         dpg.add_button(label="Save Habits", callback=save_habits_callback)
+        
+        dpg.add_spacer(height=5)  # Add some space between button and streaks
+        
+        # Create streak displays under the save button in the same order as habits
+        for habit in habits:
+            habit_labels[habit] = dpg.add_text(f"{habit} Streak: {habit_tracker.get_streak_count(habit)} days")
 
 def increment_habit_streak(habit_tracker, habit, habit_labels):
     """Increment the streak for a specific habit and update its label."""
